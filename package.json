@@ -1,0 +1,41 @@
+{
+  "name": "lit-view",
+  "version": "0.1.0",
+  "description": "Stateful views for lit-html: a small lifecycle base over AsyncDirective",
+  "license": "MIT",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/rupertsworld/lit-view.git"
+  },
+  "homepage": "https://github.com/rupertsworld/lit-view#readme",
+  "bugs": {
+    "url": "https://github.com/rupertsworld/lit-view/issues"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "prepublishOnly": "npm run typecheck && npm test && npm run build"
+  },
+  "peerDependencies": {
+    "lit-html": "^3.0.0"
+  },
+  "devDependencies": {
+    "jsdom": "^26.0.0",
+    "lit-html": "^3.3.2",
+    "typescript": "^5.8.0",
+    "vitest": "^3.0.4"
+  }
+}
