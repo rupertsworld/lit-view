@@ -1,6 +1,6 @@
 {
   "name": "lit-view",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Stateful views for lit-html: a small lifecycle base over AsyncDirective",
   "license": "MIT",
   "type": "module",
