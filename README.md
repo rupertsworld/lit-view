@@ -1,14 +1,14 @@
 # lit-view
 
-Stateful views for lit-html without a component framework: a small base class over `AsyncDirective` with a plain lifecycle vocabulary — `connected`/`disconnected` to acquire and release, `template` to derive, `render` to commit.
+Stateful views for lit-html, without a component framework.
 
-Use it when a view holds something with a lifetime — a service subscription, a timer, an owned DOM node — and a plain template function stops being enough. Its one dependency is `lit-html` (peer).
+lit-html templates are plain functions — enough until a view has to hold something with a lifetime: a service subscription, a timer, an owned DOM node. `lit-view` is a small base class for that case, layered over lit-html's own [`AsyncDirective`](https://lit.dev/docs/templates/custom-directives/#async-directives). It gives a view four plain lifecycle members and nothing else.
 
 ```bash
 npm install lit-view lit-html
 ```
 
-## API
+## Example
 
 ```ts
 import { html } from "lit-html";
@@ -29,21 +29,49 @@ export const SkillListView = view(SkillList);
 html`<section>${SkillListView()}</section>`;
 ```
 
-- **`view(Class)`** — calls lit's `directive(Class)` and returns the resulting template-callable. Invoking it in a template produces a `DirectiveResult`; lit constructs **one instance per bound child position** and reuses that instance for every subsequent host render at the position. Convention: the class defined on its own, the export wrapping it once.
-- **The host path** — the base overrides `Directive.update(part, args)`, lit's host-render entry: it stores the arguments, then — under the commit guard — runs `connected()` on first activation and returns `template(...args)` as the value lit commits. `connected()` running guarded is load-bearing: a subscription that notifies synchronously calls `render()`, which no-ops, and the returned value already carries that state. The directive's own `render()` slot is never used — which is what frees the `render` name for committing on the instance.
-- **`connected()`** — the view is live: acquire. Invoked from `update()` on first activation, and again from lit's `reconnected()` callback after every reattachment, so acquisition must be re-runnable. Both invocations run under the commit guard: anything `connected()` triggers synchronously defers to the path that invoked it.
-- **`disconnected()`** — the view is paused or gone: release. This *is* lit's `AsyncDirective.disconnected()` callback, implemented directly by the subclass. Lit fires it when the part's tree leaves the document — a removal, a cached swap-out, a keyed list move — and may follow it with `reconnected()`.
-- **`template(...args)`** — derive output from the latest host arguments; any lit-renderable value. Defaults to `noChange` (lit: leave the committed value as it is), for views that paint entirely by hand.
-- **`this.render(t?)`** — commit via `AsyncDirective.setValue()`: `t`, or `template()` called with the stored host arguments when bare. Guarded twice: it no-ops when `this.isConnected` is false (lit warns on detached `setValue`), and no-ops during a host render (calling `setValue` from inside `update()` is illegal in lit — there, the host path's return value carries).
-- **`reconnected()`** — reserved by the base; subclasses do not override it. It maps lit's reattachment callback to `connected()` under the commit guard, then a conditional, deferred catch-up: if the same render pass re-runs `update()`, the host path carries current state and the catch-up is dropped; otherwise a microtask commits `render()` after the pass unwinds — where `setValue` is legal. Catch-up for notifications missed while detached, never committed mid-render.
+The view subscribes when it enters the page, re-renders itself whenever the service notifies, and unsubscribes when it leaves. The host template just calls a function.
+
+## Lifecycle
+
+`view(Class)` turns the subclass into that template-callable. lit creates **one instance per template position** and reuses it for every later render at that position — which is what makes instance state meaningful.
+
+A subclass defines up to four members:
+
+- **`connected()`** — the view is live: acquire. Subscribe, start timers. Runs on first render, and again each time the view is reattached (a keyed list move, a [`cache()`](https://lit.dev/docs/templates/directives/#cache) swap back in), so acquisition must be re-runnable.
+
+- **`disconnected()`** — the view is paused or gone: release. Fires when the view's DOM leaves the document. It may be followed by `connected()` again.
+
+- **`template(...args)`** — derive output from the latest host arguments; return any lit-renderable value. The default renders nothing, for views that paint entirely by hand.
+
+- **`this.render(t?)`** — commit. Called bare, it commits `template()` with the latest host arguments; `render(t)` commits `t` directly. Safe to call from anywhere — subscriptions, timers, event handlers. While the view is detached it is a no-op, and during a host render the host's own result carries, so nothing double-commits.
+
+Host arguments are typed on the class: `class Row extends View<[label: string, count: number]>` receives `RowView("a", 1)` in `template`.
+
+`reconnected()` is used by the base itself — do not override it.
 
 ## Guarantees
 
-- `connected()` runs exactly once per period of attachment; host re-renders do not repeat it.
-- After a reconnect, the committed output reflects current state with no subclass code — via the host path when the reattachment re-renders the view, via a microtask-deferred commit when it doesn't.
-- `render()` never throws for lifecycle reasons: detached and mid-host-render calls are no-ops — including calls from inside `connected()`, which always runs under the guard.
-- A stable node returned from `template()` keeps its identity across host renders: lit's `ChildPart` dirty-checks the committed value by identity and no-ops on the same node — the recipe for identity-critical interiors (live iframes, keyed syncs), where the view mutates its owned subtree and returns the same element every time.
+- `connected()` runs exactly once per period of attachment; ordinary host re-renders never repeat it.
+- After a reattachment, the committed output reflects current state with no subclass code. If the same render pass re-renders the view, that render carries it; otherwise the base commits once in a microtask. A restored view cannot show stale state.
+- `render()` never throws for lifecycle reasons — detached and mid-render calls are no-ops, including calls triggered from inside `connected()`.
 
-## Non-goals
+## Owning a DOM node
 
-No scheduling or batching (commits are synchronous — the reconnection catch-up, deferred one microtask, is the sole exception), no reactive properties (arguments arrive from the host; shared state belongs to whatever owns it), no shadow DOM, no styles, no element identity. If a view needs to be a real custom element, make one — this class is for views that don't.
+For identity-critical content — a live iframe, a hand-managed canvas — create the node once, mutate it, and return the same node every time:
+
+```ts
+class Frame extends View<[src: string]> {
+  #iframe?: HTMLIFrameElement;
+  template(src: string) {
+    this.#iframe ??= document.createElement("iframe");
+    if (this.#iframe.src !== src) this.#iframe.src = src;
+    return this.#iframe;
+  }
+}
+```
+
+lit dirty-checks the committed value by identity, so returning the same node is a no-op: the iframe survives host re-renders with its document intact.
+
+## What it is not
+
+No scheduling or batching — commits are synchronous, the one exception being the reconnect catch-up, deferred one microtask. No reactive properties — arguments arrive from the host, and shared state belongs to whatever owns it. No shadow DOM, no styles, no element identity: if a view needs to be a real custom element, make one. This class is for views that don't.
