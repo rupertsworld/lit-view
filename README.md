@@ -1,8 +1,8 @@
 # lit-view
 
-Stateful views for lit-html, without a component framework.
+A view that works like a custom element, without being one.
 
-lit-html templates are plain functions — enough until a view has to hold something with a lifetime: a service subscription, a timer, an owned DOM node. `lit-view` is a small base class for that case, layered over lit-html's own [`AsyncDirective`](https://lit.dev/docs/templates/custom-directives/#async-directives). It gives a view four plain lifecycle members and nothing else.
+lit-html templates are plain functions — enough until a view has to hold something with a lifetime: a service subscription, a timer, an owned DOM node. The usual fix is to promote the view to a custom element for its lifecycle callbacks, and with it take on a tag name, a registry entry, shadow DOM, and a component boundary. `lit-view` gives you just the lifecycle: connect and acquire, disconnect and release, re-render yourself — in a class you call like a function inside any template. It is a small base over lit-html's own [`AsyncDirective`](https://lit.dev/docs/templates/custom-directives/#async-directives), four lifecycle members and nothing else.
 
 ```bash
 npm install lit-view lit-html
